@@ -1,1127 +1,125 @@
-<!DOCTYPE html>
-<html lang="fr">
-<head>
-<meta charset="UTF-8">
-<meta name="viewport" content="width=device-width, initial-scale=1.0">
-<title>Sinkay — Gestion des commandes</title>
-<script src="https://cdn.jsdelivr.net/npm/@supabase/supabase-js@2"></script>
-<link rel="preconnect" href="https://fonts.googleapis.com">
-<link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
-<link href="https://fonts.googleapis.com/css2?family=Space+Grotesk:wght@500;600;700&family=Inter:wght@400;500;600;700&display=swap" rel="stylesheet">
-<style>
-  :root{
-    --ink:#151B33;
-    --muted:#5C6480;
-    --line:rgba(21,27,51,.10);
-    --brand:#1D4E89;
-    --brand-dark:#123259;
-    --brand-soft:rgba(29,78,137,.14);
-    --clay:#C1673A;
-    --clay-soft:rgba(193,103,58,.16);
-    --amber:#A9781F;
-    --amber-soft:rgba(169,120,31,.16);
-    --rose:#A83A44;
-    --rose-soft:rgba(168,58,68,.14);
-    --green:#2F7D5D;
-    --green-soft:rgba(47,125,93,.14);
-    --sidebar-w:236px;
-    --radius:16px;
-
-    --glass-bg:rgba(255,255,255,.52);
-    --glass-bg-strong:rgba(255,255,255,.72);
-    --glass-border:rgba(255,255,255,.55);
-    --glass-shine:rgba(255,255,255,.65);
-    --glass-shadow:0 8px 32px rgba(24,42,80,.10), 0 1px 1px rgba(24,42,80,.06);
-    --input-bg:rgba(255,255,255,.65);
-    --sidebar-tint-1:rgba(29,78,137,.92);
-    --sidebar-tint-2:rgba(10,28,54,.94);
-    --page-bg:#EEF1F7;
-  }
-
-  html[data-theme="dark"]{
-    --ink:#EAEEFC;
-    --muted:#9AA3C4;
-    --line:rgba(255,255,255,.10);
-    --brand:#5B9BE0;
-    --brand-dark:#0D2544;
-    --brand-soft:rgba(91,155,224,.18);
-    --clay:#E08A5E;
-    --clay-soft:rgba(224,138,94,.16);
-    --amber:#E0B454;
-    --amber-soft:rgba(224,180,84,.16);
-    --rose:#E27C86;
-    --rose-soft:rgba(226,124,134,.16);
-    --green:#5FCB9B;
-    --green-soft:rgba(95,203,155,.16);
-
-    --glass-bg:rgba(24,29,48,.55);
-    --glass-bg-strong:rgba(28,34,56,.75);
-    --glass-border:rgba(255,255,255,.08);
-    --glass-shine:rgba(255,255,255,.08);
-    --glass-shadow:0 8px 32px rgba(0,0,0,.35);
-    --input-bg:rgba(14,18,32,.55);
-    --sidebar-tint-1:rgba(11,20,38,.9);
-    --sidebar-tint-2:rgba(4,9,20,.94);
-    --page-bg:#0B0E18;
-  }
-
-  *{box-sizing:border-box;}
-  html,body{height:100%;}
-  body{
-    margin:0;
-    font-family:"Inter",-apple-system,BlinkMacSystemFont,"Segoe UI",Roboto,Arial,sans-serif;
-    color:var(--ink);
-    background:var(--page-bg);
-    transition:background .25s ease, color .25s ease;
-  }
-  h1,h2,h3,.page-title,.stat-num,.pipeline-num{font-family:"Space Grotesk","Inter",sans-serif;}
-
-  /* ---------- Fond liquide animé ---------- */
-  .liquid-bg{
-    position:fixed; inset:0; z-index:0; overflow:hidden; pointer-events:none;
-  }
-  .blob{
-    position:absolute; border-radius:50%; filter:blur(70px);
-    opacity:.55; will-change:transform;
-  }
-  .blob1{width:520px;height:520px;background:radial-gradient(circle at 30% 30%,#4C86D0,transparent 70%);top:-140px;left:-100px;animation:float1 26s ease-in-out infinite alternate;}
-  .blob2{width:460px;height:460px;background:radial-gradient(circle at 60% 40%,#C1673A,transparent 70%);bottom:-120px;right:-80px;animation:float2 32s ease-in-out infinite alternate;}
-  .blob3{width:380px;height:380px;background:radial-gradient(circle at 50% 50%,#2F9E7D,transparent 70%);top:40%;left:55%;animation:float3 22s ease-in-out infinite alternate;}
-  html[data-theme="dark"] .blob{opacity:.35;}
-  @keyframes float1{from{transform:translate(0,0);}to{transform:translate(60px,80px);}}
-  @keyframes float2{from{transform:translate(0,0);}to{transform:translate(-70px,-50px);}}
-  @keyframes float3{from{transform:translate(0,0) scale(1);}to{transform:translate(-40px,60px) scale(1.1);}}
-  @media (prefers-reduced-motion:reduce){.blob{animation:none;}}
-
-  .app{display:flex;min-height:100vh;position:relative;z-index:1;}
-
-  /* ---------- Sidebar en verre ---------- */
-  .sidebar{
-    width:var(--sidebar-w);
-    background:linear-gradient(175deg,var(--sidebar-tint-1) 0%,var(--sidebar-tint-2) 100%);
-    backdrop-filter:blur(24px) saturate(160%);
-    -webkit-backdrop-filter:blur(24px) saturate(160%);
-    border-right:1px solid rgba(255,255,255,.10);
-    color:#DCE7F5;
-    padding:22px 0 20px;
-    flex-shrink:0;
-    display:flex;
-    flex-direction:column;
-  }
-  .sidebar-head{display:flex;align-items:center;justify-content:space-between;padding:0 22px;margin-bottom:4px;}
-  .sidebar h1{font-size:19px;font-weight:700;margin:0;letter-spacing:.2px;color:#fff;}
-  .sidebar .sub{margin:0 22px 26px;font-size:12px;color:#8DA8CC;}
-
-  .theme-toggle{
-    display:flex; align-items:center; gap:6px;
-    background:rgba(255,255,255,.10); border:1px solid rgba(255,255,255,.16);
-    border-radius:20px; padding:4px; cursor:pointer; position:relative;
-  }
-  .theme-toggle button{
-    border:none; background:transparent; color:#B7C9E3; font-size:13px;
-    padding:5px 8px; border-radius:16px; cursor:pointer; line-height:1;
-  }
-  .theme-toggle button.active{background:rgba(255,255,255,.85);color:#123259;}
-
-  .nav-item{
-    display:flex; align-items:center; gap:11px;
-    padding:11px 22px; font-size:14px; color:#B7C9E3; cursor:pointer;
-    border-left:3px solid transparent; transition:background .12s, color .12s;
-  }
-  .nav-item .ic{font-size:15px;width:18px;text-align:center;opacity:.9;}
-  .nav-item:hover{background:rgba(255,255,255,.06);color:#fff;}
-  .nav-item.active{background:rgba(255,255,255,.10);color:#fff;border-left-color:var(--clay);font-weight:600;}
-
-  .main{flex:1;padding:30px 34px;max-width:100%;overflow-x:auto;}
-  .page-title{font-size:23px;font-weight:600;margin:0 0 4px;letter-spacing:-.2px;}
-  .page-sub{font-size:13.5px;color:var(--muted);margin:0 0 24px;}
-
-  /* ---------- Cartes en verre ---------- */
-  .card{
-    position:relative;
-    background:var(--glass-bg);
-    backdrop-filter:blur(18px) saturate(160%);
-    -webkit-backdrop-filter:blur(18px) saturate(160%);
-    border:1px solid var(--glass-border);
-    border-radius:var(--radius);
-    padding:22px;
-    margin-bottom:22px;
-    box-shadow:var(--glass-shadow);
-    overflow:hidden;
-  }
-  .card::before{
-    content:"";
-    position:absolute; top:0; left:0; right:0; height:1px;
-    background:linear-gradient(90deg,transparent,var(--glass-shine),transparent);
-  }
-
-  .grid-2{display:grid;grid-template-columns:1fr 1fr;gap:16px;}
-  label{display:block;font-size:12px;color:var(--muted);margin-bottom:6px;font-weight:600;letter-spacing:.1px;}
-  input,select,textarea{
-    width:100%;
-    padding:10px 12px;
-    border:1px solid var(--line);
-    border-radius:10px;
-    font-size:14px;
-    font-family:inherit;
-    background:var(--input-bg);
-    color:var(--ink);
-    backdrop-filter:blur(6px);
-    transition:border-color .12s, box-shadow .12s;
-  }
-  input:focus,select:focus,textarea:focus{
-    outline:none;
-    border-color:var(--brand);
-    box-shadow:0 0 0 3px var(--brand-soft);
-  }
-  textarea{resize:vertical;min-height:60px;}
-  .field{margin-bottom:16px;}
-
-  .btn{
-    display:inline-block;
-    padding:10px 20px;
-    border-radius:12px;
-    border:1px solid rgba(255,255,255,.25);
-    background:linear-gradient(180deg,rgba(255,255,255,.18),rgba(255,255,255,0)) , var(--brand);
-    color:#fff;
-    font-size:14px;
-    font-weight:600;
-    cursor:pointer;
-    box-shadow:0 4px 14px rgba(29,78,137,.35), inset 0 1px 0 rgba(255,255,255,.3);
-    transition:transform .08s, box-shadow .12s, filter .12s;
-  }
-  .btn:hover{filter:brightness(1.06);}
-  .btn:active{transform:translateY(1px);}
-  .btn:disabled{opacity:.5;cursor:not-allowed;}
-  .btn-outline{
-    background:var(--glass-bg);
-    border:1px solid var(--line);
-    color:var(--ink);
-    box-shadow:none;
-  }
-  .btn-outline:hover{background:var(--glass-bg-strong);}
-  .btn-sm{padding:6px 12px;font-size:12.5px;border-radius:9px;}
-  .btn-rose{background:linear-gradient(180deg,rgba(255,255,255,.18),rgba(255,255,255,0)) , var(--rose);box-shadow:0 4px 14px rgba(168,58,68,.30), inset 0 1px 0 rgba(255,255,255,.25);}
-  .btn-green{background:linear-gradient(180deg,rgba(255,255,255,.18),rgba(255,255,255,0)) , var(--green);box-shadow:0 4px 14px rgba(47,125,93,.30), inset 0 1px 0 rgba(255,255,255,.25);}
-
-  table{width:100%;border-collapse:collapse;font-size:13.5px;}
-  th{
-    text-align:right;
-    font-size:11px;
-    text-transform:uppercase;
-    letter-spacing:.4px;
-    color:var(--muted);
-    font-weight:600;
-    padding:11px 12px;
-    border-bottom:1px solid var(--line);
-    white-space:nowrap;
-  }
-  td{padding:12px 12px;border-bottom:1px solid var(--line);vertical-align:top;}
-  tr:last-child td{border-bottom:none;}
-  tr:hover td{background:rgba(255,255,255,.06);}
-
-  .badge{
-    display:inline-block;
-    padding:4px 11px;
-    border-radius:20px;
-    font-size:11.5px;
-    font-weight:600;
-    white-space:nowrap;
-    letter-spacing:.1px;
-  }
-  .badge-new{background:var(--brand-soft);color:var(--brand);}
-  .badge-amber{background:var(--amber-soft);color:var(--amber);}
-  .badge-green{background:var(--green-soft);color:var(--green);}
-  .badge-rose{background:var(--rose-soft);color:var(--rose);}
-  .badge-muted{background:var(--line);color:var(--muted);}
-
-  .empty{text-align:center;color:var(--muted);padding:40px 0;font-size:14px;}
-
-  .toast{
-    position:fixed; bottom:24px; right:24px;
-    background:var(--glass-bg-strong);
-    backdrop-filter:blur(16px);
-    -webkit-backdrop-filter:blur(16px);
-    border:1px solid var(--glass-border);
-    color:var(--ink);
-    padding:12px 18px;
-    border-radius:12px;
-    font-size:13.5px;
-    max-width:320px;
-    z-index:999;
-    box-shadow:var(--glass-shadow);
-  }
-  .toast.error{border-color:var(--rose);color:var(--rose);}
-  .toast.success{border-color:var(--green);color:var(--green);}
-
-  .stat-grid{display:grid;grid-template-columns:repeat(auto-fit,minmax(150px,1fr));gap:14px;margin-bottom:22px;}
-  .stat-card{
-    background:var(--glass-bg);
-    backdrop-filter:blur(16px) saturate(160%);
-    -webkit-backdrop-filter:blur(16px) saturate(160%);
-    border:1px solid var(--glass-border);
-    border-radius:var(--radius);
-    padding:16px 18px;
-    box-shadow:var(--glass-shadow);
-  }
-  .stat-num{font-size:25px;font-weight:600;line-height:1;margin-bottom:7px;color:var(--ink);}
-  .stat-label{font-size:12.5px;color:var(--muted);}
-  .section-label{font-size:13px;font-weight:600;color:var(--ink);margin:28px 0 12px;}
-
-  .pipeline{
-    display:flex;
-    align-items:stretch;
-    background:linear-gradient(120deg,var(--sidebar-tint-2) 0%,var(--sidebar-tint-1) 100%);
-    backdrop-filter:blur(20px);
-    -webkit-backdrop-filter:blur(20px);
-    border:1px solid rgba(255,255,255,.14);
-    border-radius:20px;
-    padding:26px 28px;
-    margin-bottom:26px;
-    overflow-x:auto;
-    box-shadow:var(--glass-shadow);
-  }
-  .pipeline-stage{flex:1;min-width:120px;position:relative;padding:0 20px;color:#fff;}
-  .pipeline-stage:not(:last-child)::after{
-    content:""; position:absolute; right:-1px; top:8px; bottom:8px; width:1px;
-    background:rgba(255,255,255,.18);
-  }
-  .pipeline-eyebrow{font-size:11.5px;color:#9FC0E4;margin-bottom:8px;font-weight:500;}
-  .pipeline-num{font-size:30px;font-weight:600;line-height:1;margin-bottom:4px;}
-  .pipeline-sub{font-size:11.5px;color:#B7CDE8;}
-
-  .row-actions{display:flex;gap:6px;flex-wrap:wrap;}
-  .filters{display:flex;gap:10px;margin-bottom:16px;flex-wrap:wrap;}
-  .filters input,.filters select{width:auto;min-width:140px;}
-
-  .modal-overlay{
-    position:fixed; inset:0; z-index:2000;
-    background:rgba(10,14,26,.45);
-    backdrop-filter:blur(4px);
-    display:flex; align-items:center; justify-content:center;
-    padding:20px;
-  }
-  .modal{
-    width:440px; max-width:100%;
-    background:var(--glass-bg-strong);
-    backdrop-filter:blur(24px) saturate(160%);
-    -webkit-backdrop-filter:blur(24px) saturate(160%);
-    border:1px solid var(--glass-border);
-    border-radius:18px;
-    padding:24px;
-    box-shadow:var(--glass-shadow);
-    max-height:90vh;
-    overflow-y:auto;
-  }
-  .modal h3{margin:0 0 16px;font-size:16px;font-family:"Space Grotesk",sans-serif;}
-  .modal .actions{display:flex;justify-content:flex-end;gap:10px;margin-top:18px;}
-
-  @media (max-width:800px){
-    .sidebar{position:fixed;left:0;top:0;bottom:0;transform:translateX(-100%);transition:.2s;z-index:50;}
-    .sidebar.open{transform:translateX(0);}
-    .main{padding:16px;}
-    .grid-2{grid-template-columns:1fr;}
-    .menu-btn{display:block !important;}
-  }
-  .menu-btn{
-    display:none;background:var(--glass-bg);border:1px solid var(--glass-border);
-    border-radius:10px;font-size:18px;cursor:pointer;margin-bottom:10px;padding:6px 10px;color:var(--ink);
-  }
-</style>
-</head>
-<body>
-
-<div class="liquid-bg">
-  <div class="blob blob1"></div>
-  <div class="blob blob2"></div>
-  <div class="blob blob3"></div>
-</div>
-
-<div class="app">
-  <div class="sidebar" id="sidebar">
-    <div class="sidebar-head">
-      <h1>Sinkay</h1>
-      <div class="theme-toggle" id="themeToggle">
-        <button data-theme-choice="light" id="lightBtn">☀️</button>
-        <button data-theme-choice="dark" id="darkBtn">🌙</button>
-      </div>
-    </div>
-    <p class="sub">Gestion des commandes</p>
-    <div class="nav-item active" data-page="messages"><span class="ic">📩</span> Messages</div>
-    <div class="nav-item" data-page="confirmation"><span class="ic">✅</span> Confirmation</div>
-    <div class="nav-item" data-page="livraison"><span class="ic">🚚</span> Livraison</div>
-    <div class="nav-item" data-page="facturation"><span class="ic">💰</span> Facturation</div>
-    <div class="nav-item" data-page="dashboard"><span class="ic">📊</span> Dashboard</div>
-    <div class="nav-item" data-page="all-orders"><span class="ic">📋</span> Toutes les commandes</div>
-  </div>
-
-  <div class="main">
-    <button class="menu-btn" id="menuBtn">☰</button>
-    <div id="page-content"></div>
-  </div>
-</div>
-
-<script>
-// ============================================================
-// THÈME CLAIR / SOMBRE
-// ============================================================
-function applyTheme(theme){
-  document.documentElement.setAttribute("data-theme", theme);
-  document.getElementById("lightBtn").classList.toggle("active", theme === "light");
-  document.getElementById("darkBtn").classList.toggle("active", theme === "dark");
-  localStorage.setItem("sinkay-theme", theme);
-}
-(function initTheme(){
-  const saved = localStorage.getItem("sinkay-theme");
-  const preferred = saved || (window.matchMedia("(prefers-color-scheme: dark)").matches ? "dark" : "light");
-  applyTheme(preferred);
-})();
-document.getElementById("lightBtn").addEventListener("click", ()=>applyTheme("light"));
-document.getElementById("darkBtn").addEventListener("click", ()=>applyTheme("dark"));
-
-// ============================================================
-// CONFIGURATION — reliée à ton projet Supabase
-// ============================================================
-const SUPABASE_URL = "https://pkgmtdwtdpnasvpgrcdx.supabase.co";
-const SUPABASE_ANON_KEY = "eyJhbGciOiJIUzI1NiIsInR5cCI6IkpXVCJ9.eyJpc3MiOiJzdXBhYmFzZSIsInJlZiI6InBrZ210ZHd0ZHBuYXN2cGdyY2R4Iiwicm9sZSI6ImFub24iLCJpYXQiOjE3ODg3Mjk3MjEsImV4cCI6MjEwNDMwNTcyMX0.07vUwuvnTZ9_RW2D_lKNXsENlG8f6JR6vGFQ8Plq50U";
-const sb = supabase.createClient(SUPABASE_URL, SUPABASE_ANON_KEY);
-
-// ============================================================
-// LIBELLÉS (affichage en français)
-// ============================================================
-const SOURCE_LABELS = { WHATSAPP:"WhatsApp", FACEBOOK:"Facebook", INSTAGRAM:"Instagram" };
-
-const STATUS_LABELS = {
-  NEW:"Nouvelle", CONFIRMED:"Confirmée", NO_RESPONSE:"Pas de réponse",
-  VOICEMAIL:"Boîte vocale", FALSE_NUMBER:"Faux numéro", CANCELLED:"Annulée",
-  RAMASSEE:"Ramassée", EN_LIVRAISON:"En livraison", PAS_DE_REPONSE:"Pas de réponse",
-  PREMIER_APPEL:"1er appel", DEUXIEME_APPEL:"2ème appel", TROISIEME_APPEL:"3ème appel",
-  CLIENT_INTERESSE:"Client intéressé", REPORTEE:"Reportée", ANNULEE:"Annulée",
-  LIVREE:"Livrée", REFUSEE:"Refusée"
-};
-
-const STAGE_LABELS = { CONFIRMATION:"Confirmation", DELIVERY:"Livraison", BILLING:"Facturation", CLOSED:"Clôturée" };
-
-const PAYMENT_LABELS = { PAID:"💵 Payée", UNPAID:"⏳ Pas encore payée" };
-
-function badgeClass(status){
-  if (["CONFIRMED","LIVREE"].includes(status)) return "badge-green";
-  if (["FALSE_NUMBER","CANCELLED","ANNULEE","REFUSEE"].includes(status)) return "badge-rose";
-  if (["NO_RESPONSE","VOICEMAIL","REPORTEE","PAS_DE_REPONSE"].includes(status)) return "badge-amber";
-  if (status === "NEW") return "badge-new";
-  if (["RAMASSEE","EN_LIVRAISON","PREMIER_APPEL","DEUXIEME_APPEL","TROISIEME_APPEL","CLIENT_INTERESSE"].includes(status)) return "badge-new";
-  return "badge-muted";
-}
-
-function toast(msg, type=""){
-  const el = document.createElement("div");
-  el.className = "toast " + type;
-  el.textContent = msg;
-  document.body.appendChild(el);
-  setTimeout(()=> el.remove(), 3500);
-}
-
-function fmtDate(d){
-  const dt = new Date(d);
-  return dt.toLocaleDateString("fr-FR") + " " + dt.toLocaleTimeString("fr-FR",{hour:"2-digit",minute:"2-digit"});
-}
-
-function fmtMoney(v){
-  if (v === null || v === undefined) return "—";
-  return Number(v).toFixed(2) + " DH";
-}
-
-// ============================================================
-// CACHE DES COMMANDES AFFICHÉES (pour édition / suppression / export)
-// ============================================================
-let ordersById = {};
-let lastDeliveryData = [];
-
-// ============================================================
-// MODAL D'ÉDITION DES INFOS CLIENT (disponible sur toutes les pages)
-// ============================================================
-function openEditModal(orderId){
-  const o = ordersById[orderId];
-  if (!o){ toast("Commande introuvable dans le cache, recharge la page", "error"); return; }
-
-  const overlay = document.createElement("div");
-  overlay.className = "modal-overlay";
-  overlay.innerHTML = `
-    <div class="modal">
-      <h3>Modifier — ${o.order_number}</h3>
-      <div class="field"><label>Nom du client</label><input id="edit_name" value="${o.customer_name}"></div>
-      <div class="field"><label>Téléphone</label><input id="edit_phone" value="${o.customer_phone}"></div>
-      <div class="field"><label>Ville</label><input id="edit_city" value="${o.customer_city}"></div>
-      <div class="field"><label>Adresse</label><input id="edit_address" value="${o.customer_address}"></div>
-      <div class="field"><label>Produit</label><input id="edit_product" value="${o.product_name}"></div>
-      <div class="field"><label>Prix du produit (DH)</label><input id="edit_price" type="number" step="0.01" value="${o.product_price}"></div>
-      <div class="actions">
-        <button class="btn btn-outline" id="editCancelBtn">Annuler</button>
-        <button class="btn" id="editSaveBtn">Enregistrer</button>
-      </div>
-    </div>
-  `;
-  document.body.appendChild(overlay);
-
-  overlay.addEventListener("click", (e)=>{ if (e.target === overlay) overlay.remove(); });
-  overlay.querySelector("#editCancelBtn").addEventListener("click", ()=> overlay.remove());
-  overlay.querySelector("#editSaveBtn").addEventListener("click", async ()=>{
-    const btn = overlay.querySelector("#editSaveBtn");
-    btn.disabled = true; btn.textContent = "Enregistrement...";
-    try{
-      const { error } = await sb.rpc("update_order_info", {
-        p_order_id: orderId,
-        p_customer_name: overlay.querySelector("#edit_name").value.trim(),
-        p_customer_city: overlay.querySelector("#edit_city").value.trim(),
-        p_customer_address: overlay.querySelector("#edit_address").value.trim(),
-        p_customer_phone: overlay.querySelector("#edit_phone").value.trim(),
-        p_product_name: overlay.querySelector("#edit_product").value.trim(),
-        p_product_price: parseFloat(overlay.querySelector("#edit_price").value) || null
-      });
-      if (error) throw error;
-      toast("Informations mises à jour", "success");
-      overlay.remove();
-      renderPage(currentPage);
-    }catch(err){
-      toast("Erreur : " + err.message, "error");
-      btn.disabled = false; btn.textContent = "Enregistrer";
-    }
-  });
-}
-
-async function deleteOrderManually(orderId, orderNumber){
-  if (!confirm(`Supprimer définitivement la commande ${orderNumber} ?\nCette action est irréversible.`)) return;
-  if (!confirm(`Confirmation finale : supprimer ${orderNumber} pour de bon ?`)) return;
-  try{
-    const { error } = await sb.rpc("delete_order", { p_order_id: orderId });
-    if (error) throw error;
-    toast("Commande supprimée", "success");
-    renderPage(currentPage);
-  }catch(err){
-    toast("Erreur : " + err.message, "error");
-  }
-}
-
-function exportDeliveryCSV(){
-  if (!lastDeliveryData.length){ toast("Aucune commande à exporter", "error"); return; }
-  const headers = ["N° commande","Client","Téléphone","Ville","Adresse","Produit","Prix (DH)","Statut"];
-  const lines = [headers.join(",")];
-  lastDeliveryData.forEach(o=>{
-    const row = [
-      o.order_number, o.customer_name, o.customer_phone, o.customer_city,
-      o.customer_address, o.product_name, o.product_price, STATUS_LABELS[o.current_status]
-    ].map(v => `"${String(v ?? "").replace(/"/g,'""')}"`);
-    lines.push(row.join(","));
-  });
-  const csv = "\uFEFF" + lines.join("\n");
-  const blob = new Blob([csv], { type: "text/csv;charset=utf-8;" });
-  const url = URL.createObjectURL(blob);
-  const a = document.createElement("a");
-  a.href = url;
-  a.download = `livraison_${new Date().toISOString().slice(0,10)}.csv`;
-  a.click();
-  URL.revokeObjectURL(url);
-}
-
-// Délégation globale : boutons Modifier / Supprimer présents sur n'importe quelle page
-document.addEventListener("click", (e)=>{
-  const editBtn = e.target.closest("[data-edit]");
-  if (editBtn){ openEditModal(editBtn.dataset.edit); return; }
-  const delBtn = e.target.closest("[data-delete]");
-  if (delBtn){ deleteOrderManually(delBtn.dataset.delete, delBtn.dataset.orderNumber); return; }
-});
-
-// ============================================================
-// NAVIGATION
-// ============================================================
-const pages = {};
-let currentPage = "messages";
-
-document.querySelectorAll(".nav-item").forEach(item=>{
-  item.addEventListener("click", ()=>{
-    document.querySelectorAll(".nav-item").forEach(i=>i.classList.remove("active"));
-    item.classList.add("active");
-    currentPage = item.dataset.page;
-    document.getElementById("sidebar").classList.remove("open");
-    renderPage(currentPage);
-  });
-});
-
-document.getElementById("menuBtn").addEventListener("click", ()=>{
-  document.getElementById("sidebar").classList.toggle("open");
-});
-
-function renderPage(name){
-  const container = document.getElementById("page-content");
-  container.innerHTML = '<p class="empty">Chargement...</p>';
-  pages[name]().then(html=>{ container.innerHTML = html; attachHandlers(name); });
-}
-
-// ============================================================
-// PAGE : TEAM MESSAGES — création de commande
-// ============================================================
-pages.messages = async function(){
-  return `
-    <h2 class="page-title">Team Messages</h2>
-    <p class="page-sub">Créer une nouvelle commande reçue par WhatsApp, Facebook ou Instagram.</p>
-    <div class="card" style="max-width:560px;">
-      <form id="orderForm">
-        <div class="field">
-          <label>Source</label>
-          <select name="source" required>
-            <option value="WHATSAPP">WhatsApp</option>
-            <option value="FACEBOOK">Facebook</option>
-            <option value="INSTAGRAM">Instagram</option>
-          </select>
-        </div>
-        <div class="grid-2">
-          <div class="field">
-            <label>Nom du client</label>
-            <input name="customer_name" required>
-          </div>
-          <div class="field">
-            <label>Téléphone</label>
-            <input name="customer_phone" required>
-          </div>
-        </div>
-        <div class="grid-2">
-          <div class="field">
-            <label>Ville</label>
-            <input name="customer_city" required>
-          </div>
-          <div class="field">
-            <label>Adresse</label>
-            <input name="customer_address" required>
-          </div>
-        </div>
-        <div class="grid-2">
-          <div class="field">
-            <label>Produit</label>
-            <input name="product_name" required>
-          </div>
-          <div class="field">
-            <label>Prix du produit (DH)</label>
-            <input name="product_price" type="number" step="0.01" min="0.01" required>
-          </div>
-        </div>
-        <div class="field">
-          <label>Capture d'écran de la conversation (optionnel)</label>
-          <input name="screenshot" type="file" accept="image/*" id="screenshotInput">
-        </div>
-        <button type="submit" class="btn" id="submitOrderBtn">Enregistrer la commande</button>
-      </form>
-    </div>
-    <div id="recentCreated"></div>
-  `;
-};
-
-function bindMessagesForm(){
-  const form = document.getElementById("orderForm");
-  if (!form) return;
-  form.addEventListener("submit", async (e)=>{
-    e.preventDefault();
-    const btn = document.getElementById("submitOrderBtn");
-    btn.disabled = true;
-    btn.textContent = "Enregistrement...";
-    const fd = new FormData(form);
-    const price = parseFloat(fd.get("product_price"));
-    const file = document.getElementById("screenshotInput").files[0];
-
-    try{
-      let screenshotUrl = null;
-      if (file){
-        const path = `${Date.now()}_${file.name.replace(/[^a-zA-Z0-9.]/g,"_")}`;
-        const { error: uploadError } = await sb.storage
-          .from("conversation-screenshots")
-          .upload(path, file);
-        if (uploadError) throw uploadError;
-        const { data: publicUrlData } = sb.storage
-          .from("conversation-screenshots")
-          .getPublicUrl(path);
-        screenshotUrl = publicUrlData.publicUrl;
-      }
-
-      const { data, error } = await sb.rpc("create_order", {
-        p_source: fd.get("source"),
-        p_customer_name: fd.get("customer_name").trim(),
-        p_customer_city: fd.get("customer_city").trim(),
-        p_customer_address: fd.get("customer_address").trim(),
-        p_customer_phone: fd.get("customer_phone").trim(),
-        p_product_name: fd.get("product_name").trim(),
-        p_product_price: price,
-        p_screenshot_url: screenshotUrl
-      });
-      if (error) throw error;
-      toast("Commande " + data.order_number + " créée avec succès", "success");
-      form.reset();
-    }catch(err){
-      toast("Erreur : " + err.message, "error");
-    }finally{
-      btn.disabled = false;
-      btn.textContent = "Enregistrer la commande";
-    }
-  });
-}
-
-// ============================================================
-// PAGE : TEAM CONFIRMATION
-// ============================================================
-pages.confirmation = async function(){
-  const { data, error } = await sb.from("orders")
-    .select("*")
-    .eq("current_stage","CONFIRMATION")
-    .order("created_at",{ascending:false});
-
-  if (error) return `<p class="empty">Erreur de chargement : ${error.message}</p>`;
-  if (!data.length) return `<h2 class="page-title">Team Confirmation</h2><p class="empty">Aucune commande en attente de confirmation.</p>`;
-
-  data.forEach(o => ordersById[o.id] = o);
-
-  const rows = data.map(o=>`
-    <tr>
-      <td><strong>${o.order_number}</strong></td>
-      <td>${fmtDate(o.created_at)}</td>
-      <td>${SOURCE_LABELS[o.source]}</td>
-      <td>${o.customer_name}<br><span style="color:var(--muted);font-size:12px;">${o.customer_phone}</span></td>
-      <td>${o.customer_city}<br><span style="color:var(--muted);font-size:12px;">${o.customer_address}</span></td>
-      <td>${o.product_name}<br><span style="color:var(--muted);font-size:12px;">${fmtMoney(o.product_price)}</span></td>
-      <td>${o.conversation_screenshot_url
-          ? `<a href="${o.conversation_screenshot_url}" target="_blank" rel="noopener">
-               <img src="${o.conversation_screenshot_url}" style="width:44px;height:44px;object-fit:cover;border-radius:6px;border:1px solid var(--line);">
-             </a>`
-          : `<span style="color:var(--muted);">—</span>`}</td>
-      <td><span class="badge ${badgeClass(o.current_status)}">${STATUS_LABELS[o.current_status]}</span></td>
-      <td>
-        <div class="row-actions">
-          <button class="btn btn-sm btn-green" data-action="confirm" data-id="${o.id}">Confirmée</button>
-          <button class="btn btn-sm btn-outline" data-action="no_response" data-id="${o.id}">Pas de réponse</button>
-          <button class="btn btn-sm btn-outline" data-action="voicemail" data-id="${o.id}">Boîte vocale</button>
-          <button class="btn btn-sm btn-rose" data-action="false_number" data-id="${o.id}">Faux numéro</button>
-          <button class="btn btn-sm btn-rose" data-action="cancelled" data-id="${o.id}">Annulée</button>
-          <button class="btn btn-sm btn-outline" data-edit="${o.id}">✏️ Modifier</button>
-        </div>
-      </td>
-    </tr>
-  `).join("");
-
-  return `
-    <h2 class="page-title">Team Confirmation</h2>
-    <p class="page-sub">${data.length} commande(s) à traiter.</p>
-    <div class="card" style="overflow-x:auto;padding:0;">
-      <table>
-        <thead><tr>
-          <th>N°</th><th>Date</th><th>Source</th><th>Client</th><th>Ville / Adresse</th><th>Produit</th><th>Conv.</th><th>Statut</th><th>Actions</th>
-        </tr></thead>
-        <tbody>${rows}</tbody>
-      </table>
-    </div>
-  `;
-};
-
-function bindConfirmationActions(){
-  document.querySelectorAll("[data-action]").forEach(btn=>{
-    if (!["confirm","no_response","voicemail","false_number","cancelled"].includes(btn.dataset.action)) return;
-    btn.addEventListener("click", async ()=>{
-      const id = btn.dataset.id;
-      const action = btn.dataset.action;
-      const statusMap = {
-        no_response:"NO_RESPONSE", voicemail:"VOICEMAIL",
-        false_number:"FALSE_NUMBER", cancelled:"CANCELLED"
-      };
-      try{
-        if (action === "confirm"){
-          if (!confirm("Confirmer cette commande ? Elle passera en Livraison.")) return;
-          const { error } = await sb.rpc("confirm_order", { p_order_id: id });
-          if (error) throw error;
-        } else {
-          let comment = null;
-          if (action === "cancelled" || action === "false_number"){
-            comment = prompt("Commentaire (optionnel) :") || null;
-          }
-          const { error } = await sb.rpc("set_confirmation_status", {
-            p_order_id: id, p_new_status: statusMap[action], p_comment: comment
-          });
-          if (error) throw error;
-        }
-        toast("Commande mise à jour", "success");
-        renderPage("confirmation");
-      }catch(err){
-        toast("Erreur : " + err.message, "error");
-      }
-    });
-  });
-}
-
-// ============================================================
-// PAGE : TEAM LIVRAISON
-// ============================================================
-const DELIVERY_STATUSES = [
-  "RAMASSEE","EN_LIVRAISON","PAS_DE_REPONSE","PREMIER_APPEL","DEUXIEME_APPEL",
-  "TROISIEME_APPEL","CLIENT_INTERESSE","REPORTEE","ANNULEE","LIVREE","REFUSEE"
-];
-const COMMENT_REQUIRED = ["REPORTEE","ANNULEE","REFUSEE"];
-
-pages.livraison = async function(){
-  const { data, error } = await sb.from("orders")
-    .select("*")
-    .eq("current_stage","DELIVERY")
-    .order("created_at",{ascending:false});
-
-  if (error) return `<p class="empty">Erreur de chargement : ${error.message}</p>`;
-  lastDeliveryData = data;
-  if (!data.length) return `<h2 class="page-title">Team Livraison</h2><p class="empty">Aucune commande en cours de livraison.</p>`;
-
-  data.forEach(o => ordersById[o.id] = o);
-  const options = DELIVERY_STATUSES.map(s=>`<option value="${s}">${STATUS_LABELS[s]}</option>`).join("");
-
-  const rows = data.map(o=>`
-    <tr>
-      <td><strong>${o.order_number}</strong></td>
-      <td>${o.customer_name}<br><span style="color:var(--muted);font-size:12px;">${o.customer_phone}</span></td>
-      <td><strong>${o.customer_city}</strong><br><span style="font-size:12.5px;">${o.customer_address}</span></td>
-      <td>${o.product_name}<br><span style="color:var(--muted);font-size:12px;">${fmtMoney(o.product_price)}</span></td>
-      <td>${o.conversation_screenshot_url
-          ? `<a href="${o.conversation_screenshot_url}" target="_blank" rel="noopener">
-               <img src="${o.conversation_screenshot_url}" style="width:44px;height:44px;object-fit:cover;border-radius:6px;border:1px solid var(--line);">
-             </a>`
-          : `<span style="color:var(--muted);">—</span>`}</td>
-      <td><span class="badge ${badgeClass(o.current_status)}">${STATUS_LABELS[o.current_status]}</span></td>
-      <td>
-        <select class="delivery-select" data-id="${o.id}" style="margin-bottom:6px;">
-          <option value="">Changer le statut...</option>
-          ${options}
-        </select>
-        <button class="btn btn-sm" data-apply-delivery="${o.id}">Appliquer</button>
-        <button class="btn btn-sm btn-outline" data-edit="${o.id}">✏️</button>
-      </td>
-    </tr>
-  `).join("");
-
-  return `
-    <h2 class="page-title">Team Livraison</h2>
-    <p class="page-sub">${data.length} commande(s) en livraison.</p>
-    <div class="filters">
-      <button class="btn btn-outline" id="exportCsvBtn">⬇️ Exporter en CSV (société de livraison)</button>
-    </div>
-    <div class="card" style="overflow-x:auto;padding:0;">
-      <table>
-        <thead><tr>
-          <th>N°</th><th>Client</th><th>Ville / Adresse</th><th>Produit</th><th>Conv.</th><th>Statut</th><th>Action</th>
-        </tr></thead>
-        <tbody>${rows}</tbody>
-      </table>
-    </div>
-  `;
-};
-
-function bindLivraisonActions(){
-  const exportBtn = document.getElementById("exportCsvBtn");
-  if (exportBtn) exportBtn.addEventListener("click", exportDeliveryCSV);
-
-  document.querySelectorAll("[data-apply-delivery]").forEach(btn=>{
-    btn.addEventListener("click", async ()=>{
-      const id = btn.dataset.applyDelivery;
-      const select = document.querySelector(`.delivery-select[data-id="${id}"]`);
-      const status = select.value;
-      if (!status){ toast("Choisis un statut d'abord", "error"); return; }
-
-      let comment = null;
-      if (COMMENT_REQUIRED.includes(status)){
-        comment = prompt("Commentaire obligatoire pour ce statut :");
-        if (!comment || comment.trim().length < 3){
-          toast("Un commentaire valide est obligatoire", "error");
-          return;
-        }
-      } else {
-        comment = prompt("Commentaire (optionnel) :") || null;
-      }
-
-      if (["LIVREE","REFUSEE","ANNULEE"].includes(status)){
-        if (!confirm(`Es-tu sûr de vouloir marquer cette commande comme "${STATUS_LABELS[status]}" ?`)) return;
-      }
-
-      try{
-        const { error } = await sb.rpc("update_delivery_status", {
-          p_order_id: id, p_new_status: status, p_comment: comment
-        });
-        if (error) throw error;
-        toast("Statut mis à jour", "success");
-        renderPage("livraison");
-      }catch(err){
-        toast("Erreur : " + err.message, "error");
-      }
-    });
-  });
-}
-
-// ============================================================
-// PAGE : TEAM FACTURATION
-// ============================================================
-pages.facturation = async function(){
-  const { data, error } = await sb.from("orders")
-    .select("*, billing(*)")
-    .eq("current_stage","BILLING")
-    .order("created_at",{ascending:false});
-
-  if (error) return `<p class="empty">Erreur de chargement : ${error.message}</p>`;
-  if (!data.length) return `<h2 class="page-title">Team Facturation</h2><p class="empty">Aucune commande à facturer.</p>`;
-
-  data.forEach(o => ordersById[o.id] = o);
-
-  const rows = data.map(o=>{
-    const b = Array.isArray(o.billing) ? o.billing[0] : o.billing;
-    const isRefusee = o.current_status === "REFUSEE";
-    const deliveryVal = b ? b.delivery_price : (isRefusee ? 10 : "");
-    const profitVal = b && b.net_profit !== null ? b.net_profit : "";
-    const paymentVal = b ? b.payment_status : "UNPAID";
-    return `
-    <tr>
-      <td><strong>${o.order_number}</strong></td>
-      <td>${o.customer_name}<br><span style="color:var(--muted);font-size:12px;">${o.customer_phone}</span></td>
-      <td><strong>${o.customer_city}</strong><br><span style="font-size:12.5px;">${o.customer_address}</span></td>
-      <td>${o.product_name}<br><span style="color:var(--muted);font-size:12px;">${fmtMoney(o.product_price)}</span></td>
-      <td>${o.conversation_screenshot_url
-          ? `<a href="${o.conversation_screenshot_url}" target="_blank" rel="noopener">
-               <img src="${o.conversation_screenshot_url}" style="width:44px;height:44px;object-fit:cover;border-radius:6px;border:1px solid var(--line);">
-             </a>`
-          : `<span style="color:var(--muted);">—</span>`}</td>
-      <td><span class="badge ${badgeClass(o.current_status)}">${STATUS_LABELS[o.current_status]}</span></td>
-      <td>
-        <input type="number" step="0.01" min="0" class="billing-price" data-id="${o.id}"
-          value="${deliveryVal}" ${isRefusee ? "disabled title='Verrouillé automatiquement pour REFUSEE'" : ""} style="width:90px;">
-      </td>
-      <td>
-        <input type="number" step="0.01" class="billing-profit" data-id="${o.id}" value="${profitVal}" style="width:90px;">
-      </td>
-      <td>
-        <select class="billing-payment" data-id="${o.id}" style="width:150px;">
-          <option value="UNPAID" ${paymentVal==="UNPAID"?"selected":""}>⏳ Pas encore payée</option>
-          <option value="PAID" ${paymentVal==="PAID"?"selected":""}>💵 Payée</option>
-        </select>
-      </td>
-      <td><button class="btn btn-sm" data-save-billing="${o.id}" data-refusee="${isRefusee}">Enregistrer</button>
-        <button class="btn btn-sm btn-outline" data-edit="${o.id}">✏️</button></td>
-    </tr>
-  `;
-  }).join("");
-
-  return `
-    <h2 class="page-title">Team Facturation</h2>
-    <p class="page-sub">${data.length} commande(s) à facturer.</p>
-    <div class="card" style="overflow-x:auto;padding:0;">
-      <table>
-        <thead><tr>
-          <th>N°</th><th>Client</th><th>Ville / Adresse</th><th>Produit</th><th>Conv.</th><th>Statut</th>
-          <th>Prix livraison</th><th>Profit net</th><th>Paiement</th><th></th>
-        </tr></thead>
-        <tbody>${rows}</tbody>
-      </table>
-    </div>
-  `;
-};
-
-function bindFacturationActions(){
-  document.querySelectorAll("[data-save-billing]").forEach(btn=>{
-    btn.addEventListener("click", async ()=>{
-      const id = btn.dataset.saveBilling;
-      const isRefusee = btn.dataset.refusee === "true";
-      const priceInput = document.querySelector(`.billing-price[data-id="${id}"]`);
-      const profitInput = document.querySelector(`.billing-profit[data-id="${id}"]`);
-      const paymentSelect = document.querySelector(`.billing-payment[data-id="${id}"]`);
-
-      const payload = {
-        p_order_id: id,
-        p_delivery_price: isRefusee ? null : (priceInput.value ? parseFloat(priceInput.value) : null),
-        p_net_profit: profitInput.value ? parseFloat(profitInput.value) : null,
-        p_payment_status: paymentSelect.value
-      };
-      try{
-        const { error } = await sb.rpc("update_billing", payload);
-        if (error) throw error;
-        toast("Facturation enregistrée", "success");
-        renderPage("facturation");
-      }catch(err){
-        toast("Erreur : " + err.message, "error");
-      }
-    });
-  });
-}
-
-// ============================================================
-// PAGE : DASHBOARD
-// ============================================================
-pages.dashboard = async function(){
-  const { data: orders, error: e1 } = await sb.from("orders").select("current_stage,current_status,source,product_price");
-  const { data: billing, error: e2 } = await sb.from("billing").select("delivery_price,net_profit,payment_status");
-
-  if (e1 || e2) return `<p class="empty">Erreur de chargement du dashboard.</p>`;
-
-  const total = orders.length;
-  const inConfirmation = orders.filter(o=>o.current_stage==="CONFIRMATION").length;
-  const confirmed = orders.filter(o=>o.current_status==="CONFIRMED").length;
-  const inDelivery = orders.filter(o=>o.current_stage==="DELIVERY").length;
-  const reported = orders.filter(o=>o.current_status==="REPORTEE").length;
-  const delivered = orders.filter(o=>o.current_status==="LIVREE").length;
-  const refused = orders.filter(o=>o.current_status==="REFUSEE").length;
-  const cancelled = orders.filter(o=>["CANCELLED","ANNULEE"].includes(o.current_status)).length;
-  const closed = orders.filter(o=>o.current_stage==="CLOSED").length;
-
-  const totalPaid = billing.filter(b=>b.payment_status==="PAID").length;
-  const totalUnpaid = billing.filter(b=>b.payment_status==="UNPAID").length;
-  const totalDeliveryCosts = billing.reduce((s,b)=>s+Number(b.delivery_price||0),0);
-  const totalNetProfit = billing.reduce((s,b)=>s+Number(b.net_profit||0),0);
-  const totalDeliveredValue = orders.filter(o=>o.current_status==="LIVREE")
-    .reduce((s,o)=>s+Number(o.product_price||0),0);
-
-  const bySource = {WHATSAPP:0,FACEBOOK:0,INSTAGRAM:0};
-  orders.forEach(o=> bySource[o.source] = (bySource[o.source]||0)+1);
-
-  return `
-    <h2 class="page-title">Dashboard</h2>
-    <p class="page-sub">Statistiques calculées en direct depuis la base de données.</p>
-
-    <div class="pipeline">
-      <div class="pipeline-stage">
-        <div class="pipeline-eyebrow">Confirmation</div>
-        <div class="pipeline-num">${inConfirmation}</div>
-        <div class="pipeline-sub">en attente</div>
-      </div>
-      <div class="pipeline-stage">
-        <div class="pipeline-eyebrow">Confirmées</div>
-        <div class="pipeline-num">${confirmed}</div>
-        <div class="pipeline-sub">prêtes à livrer</div>
-      </div>
-      <div class="pipeline-stage">
-        <div class="pipeline-eyebrow">Livraison</div>
-        <div class="pipeline-num">${inDelivery}</div>
-        <div class="pipeline-sub">en cours</div>
-      </div>
-      <div class="pipeline-stage">
-        <div class="pipeline-eyebrow">Livrées</div>
-        <div class="pipeline-num">${delivered}</div>
-        <div class="pipeline-sub">à facturer / facturées</div>
-      </div>
-      <div class="pipeline-stage">
-        <div class="pipeline-eyebrow">Total</div>
-        <div class="pipeline-num">${total}</div>
-        <div class="pipeline-sub">commandes au total</div>
-      </div>
-    </div>
-
-    <div class="section-label">Vue d'ensemble</div>
-    <div class="stat-grid">
-      <div class="stat-card"><div class="stat-num">${reported}</div><div class="stat-label">Reportées</div></div>
-      <div class="stat-card"><div class="stat-num">${refused}</div><div class="stat-label">Refusées</div></div>
-      <div class="stat-card"><div class="stat-num">${cancelled}</div><div class="stat-label">Annulées</div></div>
-      <div class="stat-card"><div class="stat-num">${closed}</div><div class="stat-label">Clôturées</div></div>
-    </div>
-
-    <div class="section-label">Facturation</div>
-    <div class="stat-grid">
-      <div class="stat-card"><div class="stat-num">${totalPaid}</div><div class="stat-label">Total payées</div></div>
-      <div class="stat-card"><div class="stat-num">${totalUnpaid}</div><div class="stat-label">Total non payées</div></div>
-      <div class="stat-card"><div class="stat-num">${fmtMoney(totalDeliveryCosts)}</div><div class="stat-label">Coûts de livraison</div></div>
-      <div class="stat-card"><div class="stat-num">${fmtMoney(totalNetProfit)}</div><div class="stat-label">Profit net total</div></div>
-      <div class="stat-card"><div class="stat-num">${fmtMoney(totalDeliveredValue)}</div><div class="stat-label">Valeur livrée totale</div></div>
-    </div>
-
-    <div class="section-label">Par source</div>
-    <div class="stat-grid">
-      <div class="stat-card"><div class="stat-num">${bySource.WHATSAPP}</div><div class="stat-label">WhatsApp</div></div>
-      <div class="stat-card"><div class="stat-num">${bySource.FACEBOOK}</div><div class="stat-label">Facebook</div></div>
-      <div class="stat-card"><div class="stat-num">${bySource.INSTAGRAM}</div><div class="stat-label">Instagram</div></div>
-    </div>
-  `;
-};
-
-// ============================================================
-// PAGE : ALL ORDERS
-// ============================================================
-pages["all-orders"] = async function(){
-  const { data, error } = await sb.from("orders")
-    .select("*, billing(payment_status)")
-    .order("created_at",{ascending:false})
-    .limit(200);
-
-  if (error) return `<p class="empty">Erreur de chargement : ${error.message}</p>`;
-
-  data.forEach(o => ordersById[o.id] = o);
-
-  const rows = data.map(o=>{
-    const b = Array.isArray(o.billing) ? o.billing[0] : o.billing;
-    return `
-    <tr>
-      <td><strong>${o.order_number}</strong></td>
-      <td>${fmtDate(o.created_at)}</td>
-      <td>${SOURCE_LABELS[o.source]}</td>
-      <td>${o.customer_name}</td>
-      <td>${o.customer_city}</td>
-      <td>${o.customer_address}</td>
-      <td>${o.customer_phone}</td>
-      <td>${o.product_name}</td>
-      <td>${fmtMoney(o.product_price)}</td>
-      <td>${o.conversation_screenshot_url
-          ? `<a href="${o.conversation_screenshot_url}" target="_blank" rel="noopener">
-               <img src="${o.conversation_screenshot_url}" style="width:36px;height:36px;object-fit:cover;border-radius:6px;border:1px solid var(--line);">
-             </a>`
-          : `<span style="color:var(--muted);">—</span>`}</td>
-      <td>${STAGE_LABELS[o.current_stage]}</td>
-      <td><span class="badge ${badgeClass(o.current_status)}">${STATUS_LABELS[o.current_status]}</span></td>
-      <td>${b ? PAYMENT_LABELS[b.payment_status] : "—"}</td>
-      <td>
-        <div class="row-actions">
-          <button class="btn btn-sm btn-outline" data-edit="${o.id}">✏️</button>
-          <button class="btn btn-sm btn-rose" data-delete="${o.id}" data-order-number="${o.order_number}">🗑️</button>
-        </div>
-      </td>
-    </tr>
-  `;
-  }).join("");
-
-  return `
-    <h2 class="page-title">Toutes les commandes</h2>
-    <p class="page-sub">${data.length} commande(s) affichée(s) (200 max, les plus récentes).</p>
-    <div class="filters">
-      <input id="searchBox" placeholder="Rechercher : n°, client, téléphone...">
-    </div>
-    <div class="card" style="overflow-x:auto;padding:0;">
-      <table id="allOrdersTable">
-        <thead><tr>
-          <th>N°</th><th>Date</th><th>Source</th><th>Client</th><th>Ville</th><th>Adresse</th><th>Téléphone</th>
-          <th>Produit</th><th>Prix</th><th>Conv.</th><th>Étape</th><th>Statut</th><th>Paiement</th><th>Actions</th>
-        </tr></thead>
-        <tbody>${rows}</tbody>
-      </table>
-    </div>
-  `;
-};
-
-function bindAllOrdersSearch(){
-  const box = document.getElementById("searchBox");
-  if (!box) return;
-  box.addEventListener("input", ()=>{
-    const q = box.value.trim().toLowerCase();
-    document.querySelectorAll("#allOrdersTable tbody tr").forEach(tr=>{
-      tr.style.display = tr.textContent.toLowerCase().includes(q) ? "" : "none";
-    });
-  });
-}
-
-// ============================================================
-// ATTACHER LES HANDLERS SELON LA PAGE
-// ============================================================
-function attachHandlers(name){
-  if (name === "messages") bindMessagesForm();
-  if (name === "confirmation") bindConfirmationActions();
-  if (name === "livraison") bindLivraisonActions();
-  if (name === "facturation") bindFacturationActions();
-  if (name === "all-orders") bindAllOrdersSearch();
-}
-
-// ============================================================
-// DÉMARRAGE
-// ============================================================
-renderPage(currentPage);
-</script>
-</body>
-</html>
+-- ============================================================
+-- OMS - Fichier 6/6 : Correctif — "Annulée" reste visible
+-- (ne quitte plus la file active, comme "Pas de réponse")
+-- À coller dans Supabase → SQL Editor → Run
+-- ============================================================
+
+-- 1) Team Confirmation : CANCELLED reste au stade CONFIRMATION
+create or replace function set_confirmation_status(
+  p_order_id uuid,
+  p_new_status order_status,
+  p_comment text default null
+)
+returns public.orders as $$
+declare
+  v_order public.orders;
+  v_new_stage order_stage;
+begin
+  if p_new_status not in ('NO_RESPONSE','VOICEMAIL','FALSE_NUMBER','CANCELLED') then
+    raise exception 'Statut invalide pour cette action';
+  end if;
+
+  select * into v_order from public.orders where id = p_order_id for update;
+  if v_order is null then
+    raise exception 'Commande introuvable';
+  end if;
+  if v_order.current_stage <> 'CONFIRMATION' then
+    raise exception 'Transition invalide : la commande n''est pas au stade Confirmation';
+  end if;
+
+  -- Seul FALSE_NUMBER ferme définitivement la commande.
+  -- CANCELLED reste maintenant visible dans la file, comme NO_RESPONSE/VOICEMAIL.
+  if p_new_status = 'FALSE_NUMBER' then
+    v_new_stage := 'CLOSED';
+  else
+    v_new_stage := 'CONFIRMATION';
+  end if;
+
+  update public.orders
+  set current_status = p_new_status, current_stage = v_new_stage
+  where id = p_order_id
+  returning * into v_order;
+
+  insert into public.order_history (
+    order_id, old_stage, new_stage, old_status, new_status, comment
+  ) values (
+    p_order_id, 'CONFIRMATION', v_new_stage, v_order.current_status, p_new_status, p_comment
+  );
+
+  return v_order;
+end;
+$$ language plpgsql security definer;
+
+-- 2) Team Livraison : ANNULEE reste au stade DELIVERY (ne se ferme plus)
+create or replace function update_delivery_status(
+  p_order_id uuid,
+  p_new_status order_status,
+  p_comment text default null
+)
+returns public.orders as $$
+declare
+  v_order public.orders;
+  v_new_stage order_stage;
+  v_old_stage order_stage;
+  v_old_status order_status;
+begin
+  if p_new_status not in (
+    'RAMASSEE','EN_LIVRAISON','PAS_DE_REPONSE','PREMIER_APPEL',
+    'DEUXIEME_APPEL','TROISIEME_APPEL','CLIENT_INTERESSE',
+    'REPORTEE','ANNULEE','LIVREE','REFUSEE'
+  ) then
+    raise exception 'Statut de livraison invalide';
+  end if;
+
+  select * into v_order from public.orders where id = p_order_id for update;
+  if v_order is null then
+    raise exception 'Commande introuvable';
+  end if;
+  if v_order.current_stage <> 'DELIVERY' then
+    raise exception 'Transition invalide : la commande n''est pas au stade Livraison';
+  end if;
+
+  if p_new_status in ('REPORTEE','ANNULEE','REFUSEE') then
+    if p_comment is null or length(trim(p_comment)) < 3 then
+      raise exception 'Un commentaire est obligatoire pour le statut %', p_new_status;
+    end if;
+  end if;
+
+  v_old_stage := v_order.current_stage;
+  v_old_status := v_order.current_status;
+
+  if p_new_status in ('LIVREE','REFUSEE') then
+    v_new_stage := 'BILLING';
+  else
+    -- ANNULEE reste maintenant visible dans Team Livraison, comme REPORTEE.
+    v_new_stage := 'DELIVERY';
+  end if;
+
+  update public.orders
+  set current_status = p_new_status, current_stage = v_new_stage
+  where id = p_order_id
+  returning * into v_order;
+
+  insert into public.order_history (
+    order_id, old_stage, new_stage, old_status, new_status, comment
+  ) values (
+    p_order_id, v_old_stage, v_new_stage, v_old_status, p_new_status, p_comment
+  );
+
+  if p_new_status = 'REFUSEE' then
+    insert into public.billing (order_id, delivery_price, payment_status)
+    values (p_order_id, 10, 'UNPAID');
+
+    insert into public.order_history (
+      order_id, old_stage, new_stage, old_status, new_status, comment
+    ) values (
+      p_order_id, 'BILLING', 'BILLING', p_new_status, p_new_status,
+      'Prix de livraison fixé automatiquement à 10 DH'
+    );
+  end if;
+
+  return v_order;
+end;
+$$ language plpgsql security definer;
+
+-- Fin du fichier 6/6.
