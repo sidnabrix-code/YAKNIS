@@ -294,6 +294,28 @@
   .filters{display:flex;gap:10px;margin-bottom:16px;flex-wrap:wrap;}
   .filters input,.filters select{width:auto;min-width:140px;}
 
+  .modal-overlay{
+    position:fixed; inset:0; z-index:2000;
+    background:rgba(10,14,26,.45);
+    backdrop-filter:blur(4px);
+    display:flex; align-items:center; justify-content:center;
+    padding:20px;
+  }
+  .modal{
+    width:440px; max-width:100%;
+    background:var(--glass-bg-strong);
+    backdrop-filter:blur(24px) saturate(160%);
+    -webkit-backdrop-filter:blur(24px) saturate(160%);
+    border:1px solid var(--glass-border);
+    border-radius:18px;
+    padding:24px;
+    box-shadow:var(--glass-shadow);
+    max-height:90vh;
+    overflow-y:auto;
+  }
+  .modal h3{margin:0 0 16px;font-size:16px;font-family:"Space Grotesk",sans-serif;}
+  .modal .actions{display:flex;justify-content:flex-end;gap:10px;margin-top:18px;}
+
   @media (max-width:800px){
     .sidebar{position:fixed;left:0;top:0;bottom:0;transform:translateX(-100%);transition:.2s;z-index:50;}
     .sidebar.open{transform:translateX(0);}
@@ -408,6 +430,106 @@ function fmtMoney(v){
   if (v === null || v === undefined) return "—";
   return Number(v).toFixed(2) + " DH";
 }
+
+// ============================================================
+// CACHE DES COMMANDES AFFICHÉES (pour édition / suppression / export)
+// ============================================================
+let ordersById = {};
+let lastDeliveryData = [];
+
+// ============================================================
+// MODAL D'ÉDITION DES INFOS CLIENT (disponible sur toutes les pages)
+// ============================================================
+function openEditModal(orderId){
+  const o = ordersById[orderId];
+  if (!o){ toast("Commande introuvable dans le cache, recharge la page", "error"); return; }
+
+  const overlay = document.createElement("div");
+  overlay.className = "modal-overlay";
+  overlay.innerHTML = `
+    <div class="modal">
+      <h3>Modifier — ${o.order_number}</h3>
+      <div class="field"><label>Nom du client</label><input id="edit_name" value="${o.customer_name}"></div>
+      <div class="field"><label>Téléphone</label><input id="edit_phone" value="${o.customer_phone}"></div>
+      <div class="field"><label>Ville</label><input id="edit_city" value="${o.customer_city}"></div>
+      <div class="field"><label>Adresse</label><input id="edit_address" value="${o.customer_address}"></div>
+      <div class="field"><label>Produit</label><input id="edit_product" value="${o.product_name}"></div>
+      <div class="field"><label>Prix du produit (DH)</label><input id="edit_price" type="number" step="0.01" value="${o.product_price}"></div>
+      <div class="actions">
+        <button class="btn btn-outline" id="editCancelBtn">Annuler</button>
+        <button class="btn" id="editSaveBtn">Enregistrer</button>
+      </div>
+    </div>
+  `;
+  document.body.appendChild(overlay);
+
+  overlay.addEventListener("click", (e)=>{ if (e.target === overlay) overlay.remove(); });
+  overlay.querySelector("#editCancelBtn").addEventListener("click", ()=> overlay.remove());
+  overlay.querySelector("#editSaveBtn").addEventListener("click", async ()=>{
+    const btn = overlay.querySelector("#editSaveBtn");
+    btn.disabled = true; btn.textContent = "Enregistrement...";
+    try{
+      const { error } = await sb.rpc("update_order_info", {
+        p_order_id: orderId,
+        p_customer_name: overlay.querySelector("#edit_name").value.trim(),
+        p_customer_city: overlay.querySelector("#edit_city").value.trim(),
+        p_customer_address: overlay.querySelector("#edit_address").value.trim(),
+        p_customer_phone: overlay.querySelector("#edit_phone").value.trim(),
+        p_product_name: overlay.querySelector("#edit_product").value.trim(),
+        p_product_price: parseFloat(overlay.querySelector("#edit_price").value) || null
+      });
+      if (error) throw error;
+      toast("Informations mises à jour", "success");
+      overlay.remove();
+      renderPage(currentPage);
+    }catch(err){
+      toast("Erreur : " + err.message, "error");
+      btn.disabled = false; btn.textContent = "Enregistrer";
+    }
+  });
+}
+
+async function deleteOrderManually(orderId, orderNumber){
+  if (!confirm(`Supprimer définitivement la commande ${orderNumber} ?\nCette action est irréversible.`)) return;
+  if (!confirm(`Confirmation finale : supprimer ${orderNumber} pour de bon ?`)) return;
+  try{
+    const { error } = await sb.rpc("delete_order", { p_order_id: orderId });
+    if (error) throw error;
+    toast("Commande supprimée", "success");
+    renderPage(currentPage);
+  }catch(err){
+    toast("Erreur : " + err.message, "error");
+  }
+}
+
+function exportDeliveryCSV(){
+  if (!lastDeliveryData.length){ toast("Aucune commande à exporter", "error"); return; }
+  const headers = ["N° commande","Client","Téléphone","Ville","Adresse","Produit","Prix (DH)","Statut"];
+  const lines = [headers.join(",")];
+  lastDeliveryData.forEach(o=>{
+    const row = [
+      o.order_number, o.customer_name, o.customer_phone, o.customer_city,
+      o.customer_address, o.product_name, o.product_price, STATUS_LABELS[o.current_status]
+    ].map(v => `"${String(v ?? "").replace(/"/g,'""')}"`);
+    lines.push(row.join(","));
+  });
+  const csv = "\uFEFF" + lines.join("\n");
+  const blob = new Blob([csv], { type: "text/csv;charset=utf-8;" });
+  const url = URL.createObjectURL(blob);
+  const a = document.createElement("a");
+  a.href = url;
+  a.download = `livraison_${new Date().toISOString().slice(0,10)}.csv`;
+  a.click();
+  URL.revokeObjectURL(url);
+}
+
+// Délégation globale : boutons Modifier / Supprimer présents sur n'importe quelle page
+document.addEventListener("click", (e)=>{
+  const editBtn = e.target.closest("[data-edit]");
+  if (editBtn){ openEditModal(editBtn.dataset.edit); return; }
+  const delBtn = e.target.closest("[data-delete]");
+  if (delBtn){ deleteOrderManually(delBtn.dataset.delete, delBtn.dataset.orderNumber); return; }
+});
 
 // ============================================================
 // NAVIGATION
@@ -553,13 +675,15 @@ pages.confirmation = async function(){
   if (error) return `<p class="empty">Erreur de chargement : ${error.message}</p>`;
   if (!data.length) return `<h2 class="page-title">Team Confirmation</h2><p class="empty">Aucune commande en attente de confirmation.</p>`;
 
+  data.forEach(o => ordersById[o.id] = o);
+
   const rows = data.map(o=>`
     <tr>
       <td><strong>${o.order_number}</strong></td>
       <td>${fmtDate(o.created_at)}</td>
       <td>${SOURCE_LABELS[o.source]}</td>
       <td>${o.customer_name}<br><span style="color:var(--muted);font-size:12px;">${o.customer_phone}</span></td>
-      <td>${o.customer_city}</td>
+      <td>${o.customer_city}<br><span style="color:var(--muted);font-size:12px;">${o.customer_address}</span></td>
       <td>${o.product_name}<br><span style="color:var(--muted);font-size:12px;">${fmtMoney(o.product_price)}</span></td>
       <td>${o.conversation_screenshot_url
           ? `<a href="${o.conversation_screenshot_url}" target="_blank" rel="noopener">
@@ -574,6 +698,7 @@ pages.confirmation = async function(){
           <button class="btn btn-sm btn-outline" data-action="voicemail" data-id="${o.id}">Boîte vocale</button>
           <button class="btn btn-sm btn-rose" data-action="false_number" data-id="${o.id}">Faux numéro</button>
           <button class="btn btn-sm btn-rose" data-action="cancelled" data-id="${o.id}">Annulée</button>
+          <button class="btn btn-sm btn-outline" data-edit="${o.id}">✏️ Modifier</button>
         </div>
       </td>
     </tr>
@@ -585,7 +710,7 @@ pages.confirmation = async function(){
     <div class="card" style="overflow-x:auto;padding:0;">
       <table>
         <thead><tr>
-          <th>N°</th><th>Date</th><th>Source</th><th>Client</th><th>Ville</th><th>Produit</th><th>Conv.</th><th>Statut</th><th>Actions</th>
+          <th>N°</th><th>Date</th><th>Source</th><th>Client</th><th>Ville / Adresse</th><th>Produit</th><th>Conv.</th><th>Statut</th><th>Actions</th>
         </tr></thead>
         <tbody>${rows}</tbody>
       </table>
@@ -643,16 +768,23 @@ pages.livraison = async function(){
     .order("created_at",{ascending:false});
 
   if (error) return `<p class="empty">Erreur de chargement : ${error.message}</p>`;
+  lastDeliveryData = data;
   if (!data.length) return `<h2 class="page-title">Team Livraison</h2><p class="empty">Aucune commande en cours de livraison.</p>`;
 
+  data.forEach(o => ordersById[o.id] = o);
   const options = DELIVERY_STATUSES.map(s=>`<option value="${s}">${STATUS_LABELS[s]}</option>`).join("");
 
   const rows = data.map(o=>`
     <tr>
       <td><strong>${o.order_number}</strong></td>
       <td>${o.customer_name}<br><span style="color:var(--muted);font-size:12px;">${o.customer_phone}</span></td>
-      <td>${o.customer_city}<br><span style="color:var(--muted);font-size:12px;">${o.customer_address}</span></td>
+      <td><strong>${o.customer_city}</strong><br><span style="font-size:12.5px;">${o.customer_address}</span></td>
       <td>${o.product_name}<br><span style="color:var(--muted);font-size:12px;">${fmtMoney(o.product_price)}</span></td>
+      <td>${o.conversation_screenshot_url
+          ? `<a href="${o.conversation_screenshot_url}" target="_blank" rel="noopener">
+               <img src="${o.conversation_screenshot_url}" style="width:44px;height:44px;object-fit:cover;border-radius:6px;border:1px solid var(--line);">
+             </a>`
+          : `<span style="color:var(--muted);">—</span>`}</td>
       <td><span class="badge ${badgeClass(o.current_status)}">${STATUS_LABELS[o.current_status]}</span></td>
       <td>
         <select class="delivery-select" data-id="${o.id}" style="margin-bottom:6px;">
@@ -660,6 +792,7 @@ pages.livraison = async function(){
           ${options}
         </select>
         <button class="btn btn-sm" data-apply-delivery="${o.id}">Appliquer</button>
+        <button class="btn btn-sm btn-outline" data-edit="${o.id}">✏️</button>
       </td>
     </tr>
   `).join("");
@@ -667,10 +800,13 @@ pages.livraison = async function(){
   return `
     <h2 class="page-title">Team Livraison</h2>
     <p class="page-sub">${data.length} commande(s) en livraison.</p>
+    <div class="filters">
+      <button class="btn btn-outline" id="exportCsvBtn">⬇️ Exporter en CSV (société de livraison)</button>
+    </div>
     <div class="card" style="overflow-x:auto;padding:0;">
       <table>
         <thead><tr>
-          <th>N°</th><th>Client</th><th>Ville / Adresse</th><th>Produit</th><th>Statut</th><th>Action</th>
+          <th>N°</th><th>Client</th><th>Ville / Adresse</th><th>Produit</th><th>Conv.</th><th>Statut</th><th>Action</th>
         </tr></thead>
         <tbody>${rows}</tbody>
       </table>
@@ -679,6 +815,9 @@ pages.livraison = async function(){
 };
 
 function bindLivraisonActions(){
+  const exportBtn = document.getElementById("exportCsvBtn");
+  if (exportBtn) exportBtn.addEventListener("click", exportDeliveryCSV);
+
   document.querySelectorAll("[data-apply-delivery]").forEach(btn=>{
     btn.addEventListener("click", async ()=>{
       const id = btn.dataset.applyDelivery;
@@ -727,6 +866,8 @@ pages.facturation = async function(){
   if (error) return `<p class="empty">Erreur de chargement : ${error.message}</p>`;
   if (!data.length) return `<h2 class="page-title">Team Facturation</h2><p class="empty">Aucune commande à facturer.</p>`;
 
+  data.forEach(o => ordersById[o.id] = o);
+
   const rows = data.map(o=>{
     const b = Array.isArray(o.billing) ? o.billing[0] : o.billing;
     const isRefusee = o.current_status === "REFUSEE";
@@ -736,9 +877,14 @@ pages.facturation = async function(){
     return `
     <tr>
       <td><strong>${o.order_number}</strong></td>
-      <td>${o.customer_name}</td>
-      <td>${o.customer_city}</td>
+      <td>${o.customer_name}<br><span style="color:var(--muted);font-size:12px;">${o.customer_phone}</span></td>
+      <td><strong>${o.customer_city}</strong><br><span style="font-size:12.5px;">${o.customer_address}</span></td>
       <td>${o.product_name}<br><span style="color:var(--muted);font-size:12px;">${fmtMoney(o.product_price)}</span></td>
+      <td>${o.conversation_screenshot_url
+          ? `<a href="${o.conversation_screenshot_url}" target="_blank" rel="noopener">
+               <img src="${o.conversation_screenshot_url}" style="width:44px;height:44px;object-fit:cover;border-radius:6px;border:1px solid var(--line);">
+             </a>`
+          : `<span style="color:var(--muted);">—</span>`}</td>
       <td><span class="badge ${badgeClass(o.current_status)}">${STATUS_LABELS[o.current_status]}</span></td>
       <td>
         <input type="number" step="0.01" min="0" class="billing-price" data-id="${o.id}"
@@ -753,7 +899,8 @@ pages.facturation = async function(){
           <option value="PAID" ${paymentVal==="PAID"?"selected":""}>💵 Payée</option>
         </select>
       </td>
-      <td><button class="btn btn-sm" data-save-billing="${o.id}" data-refusee="${isRefusee}">Enregistrer</button></td>
+      <td><button class="btn btn-sm" data-save-billing="${o.id}" data-refusee="${isRefusee}">Enregistrer</button>
+        <button class="btn btn-sm btn-outline" data-edit="${o.id}">✏️</button></td>
     </tr>
   `;
   }).join("");
@@ -764,7 +911,7 @@ pages.facturation = async function(){
     <div class="card" style="overflow-x:auto;padding:0;">
       <table>
         <thead><tr>
-          <th>N°</th><th>Client</th><th>Ville</th><th>Produit</th><th>Statut</th>
+          <th>N°</th><th>Client</th><th>Ville / Adresse</th><th>Produit</th><th>Conv.</th><th>Statut</th>
           <th>Prix livraison</th><th>Profit net</th><th>Paiement</th><th></th>
         </tr></thead>
         <tbody>${rows}</tbody>
@@ -898,6 +1045,8 @@ pages["all-orders"] = async function(){
 
   if (error) return `<p class="empty">Erreur de chargement : ${error.message}</p>`;
 
+  data.forEach(o => ordersById[o.id] = o);
+
   const rows = data.map(o=>{
     const b = Array.isArray(o.billing) ? o.billing[0] : o.billing;
     return `
@@ -907,12 +1056,24 @@ pages["all-orders"] = async function(){
       <td>${SOURCE_LABELS[o.source]}</td>
       <td>${o.customer_name}</td>
       <td>${o.customer_city}</td>
+      <td>${o.customer_address}</td>
       <td>${o.customer_phone}</td>
       <td>${o.product_name}</td>
       <td>${fmtMoney(o.product_price)}</td>
+      <td>${o.conversation_screenshot_url
+          ? `<a href="${o.conversation_screenshot_url}" target="_blank" rel="noopener">
+               <img src="${o.conversation_screenshot_url}" style="width:36px;height:36px;object-fit:cover;border-radius:6px;border:1px solid var(--line);">
+             </a>`
+          : `<span style="color:var(--muted);">—</span>`}</td>
       <td>${STAGE_LABELS[o.current_stage]}</td>
       <td><span class="badge ${badgeClass(o.current_status)}">${STATUS_LABELS[o.current_status]}</span></td>
       <td>${b ? PAYMENT_LABELS[b.payment_status] : "—"}</td>
+      <td>
+        <div class="row-actions">
+          <button class="btn btn-sm btn-outline" data-edit="${o.id}">✏️</button>
+          <button class="btn btn-sm btn-rose" data-delete="${o.id}" data-order-number="${o.order_number}">🗑️</button>
+        </div>
+      </td>
     </tr>
   `;
   }).join("");
@@ -926,8 +1087,8 @@ pages["all-orders"] = async function(){
     <div class="card" style="overflow-x:auto;padding:0;">
       <table id="allOrdersTable">
         <thead><tr>
-          <th>N°</th><th>Date</th><th>Source</th><th>Client</th><th>Ville</th><th>Téléphone</th>
-          <th>Produit</th><th>Prix</th><th>Étape</th><th>Statut</th><th>Paiement</th>
+          <th>N°</th><th>Date</th><th>Source</th><th>Client</th><th>Ville</th><th>Adresse</th><th>Téléphone</th>
+          <th>Produit</th><th>Prix</th><th>Conv.</th><th>Étape</th><th>Statut</th><th>Paiement</th><th>Actions</th>
         </tr></thead>
         <tbody>${rows}</tbody>
       </table>
